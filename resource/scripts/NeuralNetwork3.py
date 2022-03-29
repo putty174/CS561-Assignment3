@@ -3,18 +3,25 @@ import sys
 
 
 def load_files():
-    for filename in sys.argv[1:]:
-        with open(filename, 'r') as file:
-            print(filename)
-            cvs_reader = csv.reader(file)
-            lines = []
-            for line in cvs_reader:
-                lines.append(line)
-            print(lines)
+    training_images = load_file(sys.argv[1])
+    training_lables = load_file(sys.argv[2])
+    testing_images = load_file(sys.argv[3])
+    training_tuples = tuple(zip(training_lables, training_images))
+    return training_tuples, testing_images
+
+
+def load_file(filename):
+    with open(filename, 'r') as file:
+        cvs_reader = csv.reader(file)
+        lines = []
+        for line in cvs_reader:
+            lines.append(line)
+    return lines
 
 
 def main():
-    load_files()
+    training_set, testing_set = load_files()
+    print(training_set)
 
 
 if __name__ == "__main__":
