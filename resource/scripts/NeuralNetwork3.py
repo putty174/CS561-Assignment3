@@ -6,19 +6,24 @@ import scipy.special
 
 
 def load_files():
+    print("Loading Files...")
     training_images = load_file(sys.argv[1])
     training_labels = load_file(sys.argv[2])
     testing_images = load_file(sys.argv[3])
-    training_tuples = tuple(zip(training_labels, training_images))
-    return training_tuples, testing_images
+    print("Zipping Files...")
+    return training_images, training_labels, testing_images
 
 
 def load_file(filename):
+    print("Loading {}".format(filename))
     with open(filename, 'r') as file:
         return numpy.genfromtxt(filename, dtype=int, delimiter=',')
 
 
 class HandwritingDigitAnalysis:
+    epochs = 100000
+    batch_size = 1000
+
     starting_weight = 0.001
     input_to_h1_reduction_ratio = 0.5
     h1_to_h2_reduction_ratio = 0.5
@@ -27,8 +32,8 @@ class HandwritingDigitAnalysis:
 
     output_classes = range(10)
 
-    def __init__(self, training_set, desired_output_size):
-        self.input_size = len(training_set[0][1])
+    def __init__(self, training_labels, training_images, desired_output_size):
+        self.input_size = len(training_images[0])
         self.output_size = desired_output_size
 
         self.hidden1_size = round(math.sqrt(self.input_size) * self.input_to_h1_reduction_ratio)
@@ -39,13 +44,29 @@ class HandwritingDigitAnalysis:
 
         self.output_matrix = numpy.full((pow(self.hidden2_size, 2), self.output_size), self.generate_initial_weights(pow(self.hidden2_size, 2), self.output_size))
 
-        self.train(training_set)
+        for i in range(self.epochs):
+            print("Training epoch {}".format(i))
+            batch_set = self.create_batch(training_labels, training_images, self.batch_size)
+            accuracy = self.train(batch_set)
+            print("Epoch {}: {}%".format(i, accuracy))
 
     def generate_initial_weights(self, width, height):
         return numpy.random.uniform(-1., 1., size=(width, height)) / numpy.sqrt(width * height)
 
+    def create_batch(self, source_labels, source_images, target_batch_size):
+        sample_indexes = numpy.random.randint(0, len(source_images), size=target_batch_size)
+        batch_labels = source_labels[sample_indexes]
+        batch_images = source_images[sample_indexes]
+        return tuple(zip(batch_labels, batch_images))
+
     def train(self, training_set):
+        count = 0
+        correct = 0
         for label, data in training_set:
+            count += 1
+            if count % 10000 == 0:
+                print("{} trained".format(count))
+
             layer1 = data.dot(self.hidden1_matrix)
             sig1 = scipy.special.expit(layer1)
             layer2 = sig1.dot(self.hidden2_matrix)
@@ -54,6 +75,9 @@ class HandwritingDigitAnalysis:
             out_prob = scipy.special.softmax(out_raw)
             out_index = numpy.argmax(out_prob)
             out_result = self.output_classes[out_index]
+
+            if out_result == label:
+                correct += 1
 
             target = numpy.zeros(len(self.output_classes))
             target[label] = 1
@@ -72,7 +96,7 @@ class HandwritingDigitAnalysis:
             self.hidden2_matrix = self.hidden2_matrix - self.error_adj_weight * hidden2_matrix_delta
             self.hidden1_matrix = self.hidden1_matrix - self.error_adj_weight * hidden1_matrix_delta
 
-            print(out_result)
+        return correct / len(training_set)
 
     def d_sigmoid(self, post_sigmoid_input):
         return post_sigmoid_input * (1 - post_sigmoid_input)
@@ -94,8 +118,8 @@ class HandwritingDigitAnalysis:
 
 
 def main():
-    training_set, testing_set = load_files()
-    hda = HandwritingDigitAnalysis(training_set, 10)
+    training_images, training_labels, testing_images = load_files()
+    hda = HandwritingDigitAnalysis(training_labels, training_images, 10)
 
 
 if __name__ == "__main__":
