@@ -2,6 +2,7 @@ import math
 import random
 import sys
 import time
+from enum import Enum
 from idlelib import testing
 
 import numpy
@@ -28,9 +29,12 @@ def load_file(filename):
 def preprocess_images(images):
     return images / numpy.amax(images)
 
+class ActivationFunction(Enum):
+    sigmoid = "sigmoid"
+    relu = "relu"
 
 class HandwritingDigitAnalysis:
-    epochs = 35
+    epochs = 40
     batch_size = 100
     current_epoch = 0
 
@@ -41,6 +45,7 @@ class HandwritingDigitAnalysis:
     output_classes = range(10)
 
     def __init__(self, training_labels, training_images, desired_output_size):
+        self.activation_type = ActivationFunction.relu
         self.start_time = time.time()
 
         self.input_size = len(training_images[0])
@@ -57,10 +62,10 @@ class HandwritingDigitAnalysis:
 
         for i in range(self.epochs):
             self.current_epoch += 1
-            print("{} Training epoch {}".format(time.time() - self.start_time, i))
+            print("Training epoch {}".format(i))
             random.shuffle(training_set)
             accuracy = self.train(training_set)
-            print("Epoch {}: {}%".format(i, accuracy))
+            print("{} Epoch {}: {}%".format(time.time() - self.start_time, i, accuracy))
 
     def generate_initial_weights(self, width, height):
         return numpy.random.uniform(-1., 1., size=(width, height)) / numpy.sqrt(width * height)
@@ -88,10 +93,12 @@ class HandwritingDigitAnalysis:
                     print("{} trained".format(count))
                 # print("{}".format(self.output_matrix[0]))
 
-            layer1 = data.dot(self.hidden1_matrix) + self.hidden1_bias
-            activated1 = self.relu(layer1)
+            layer1 = data.dot(self.hidden1_matrix)
+            layer1 += self.hidden1_bias
+            activated1 = self.activation(layer1)
 
-            out_raw = activated1.dot(self.output_matrix) + self.output_bias
+            out_raw = activated1.dot(self.output_matrix)
+            out_raw += self.output_bias
             out_prob = scipy.special.softmax(out_raw)
             out_index = numpy.argmax(out_prob)
             out_result = self.output_classes[out_index]
@@ -110,21 +117,34 @@ class HandwritingDigitAnalysis:
             output_matrix_delta = numpy.matmul(activated1.T, cost)
             cumulative_output_data_change += output_matrix_delta
 
-            layer1_bias_delta = numpy.matmul(cost, self.output_matrix.T) * self.d_relu(layer1)
+            layer1_bias_delta = numpy.matmul(cost, self.output_matrix.T) * self.d_activation(layer1)
             cumulative_layer1_bias_change += layer1_bias_delta
-            layer1_matrix_delta = numpy.matmul(layer1_bias_delta.T, data).T
+            layer1_matrix_delta = numpy.matmul(data.T, layer1_bias_delta)
             cumulative_layer1_data_change += layer1_matrix_delta
 
         return correct / len(training_set)
 
-    def d_sigmoid(self, post_sigmoid_input):
-        return post_sigmoid_input * (1 - post_sigmoid_input)
+    def d_sigmoid(self, d_input):
+        sigmoid = scipy.special.expit(d_input)
+        return sigmoid * (1 - sigmoid)
 
-    def relu(self, input):
-        return numpy.maximum(0, input)
+    def relu(self, f_input):
+        return numpy.maximum(0, f_input)
 
-    def d_relu(self, input):
-        return numpy.where(input > 0, 1, 0)
+    def d_relu(self, d_input):
+        return numpy.where(d_input > 0, 1, 0)
+
+    def activation(self, a_input):
+        if self.activation_type == ActivationFunction.sigmoid:
+            return scipy.special.expit(a_input)
+        elif self.activation_type == ActivationFunction.relu:
+            return self.relu(a_input)
+
+    def d_activation(self, dev_input):
+        if self.activation_type == ActivationFunction.sigmoid:
+            return self.d_sigmoid(dev_input)
+        elif self.activation_type == ActivationFunction.relu:
+            return self.d_relu(dev_input)
 
     def d_softmax(self, pre_softmax_input):
         exp = numpy.exp(pre_softmax_input - pre_softmax_input.max())
