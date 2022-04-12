@@ -48,8 +48,10 @@ class HandwritingDigitAnalysis:
 
         self.hidden1_size = round(math.sqrt(self.input_size) * self.input_to_h1_reduction_ratio)
         self.hidden1_matrix = numpy.full((self.input_size, pow(self.hidden1_size, 2)), self.generate_initial_weights(self.input_size, pow(self.hidden1_size, 2)))
+        self.hidden1_bias = numpy.full((1, pow(self.hidden1_size, 2)), self.generate_initial_weights(1, pow(self.hidden1_size, 2)))
 
         self.output_matrix = numpy.full((pow(self.hidden1_size, 2), self.output_size), self.generate_initial_weights(pow(self.hidden1_size, 2), self.output_size))
+        self.output_bias = numpy.full((1, self.output_size), self.generate_initial_weights(1, self.output_size))
 
         training_set = list(zip(training_labels, training_images))
 
@@ -67,27 +69,32 @@ class HandwritingDigitAnalysis:
         count = 0
         correct = 0
         cumulative_layer1_data_change = numpy.zeros_like(self.hidden1_matrix)
+        cumulative_layer1_bias_change = numpy.zeros_like(self.hidden1_bias)
         cumulative_output_data_change = numpy.zeros_like(self.output_matrix)
+        cumulative_output_bias_change = numpy.zeros_like(self.output_bias)
+
         for label, data in training_set:
             count += 1
+            data = data.reshape(1, -1)
 
             if count % self.batch_size == 0:
                 # print("{}".format(cumulative_output_data_change[0]))
-                self.update_model(cumulative_layer1_data_change, cumulative_output_data_change)
+                self.update_model(cumulative_layer1_data_change, cumulative_layer1_bias_change, cumulative_output_data_change, cumulative_output_bias_change)
                 cumulative_layer1_data_change = numpy.zeros_like(self.hidden1_matrix)
+                cumulative_layer1_bias_change = numpy.zeros_like(self.hidden1_bias)
                 cumulative_output_data_change = numpy.zeros_like(self.output_matrix)
+                cumulative_output_bias_change = numpy.zeros_like(self.output_bias)
                 if count % (self.batch_size * 100) == 0:
                     print("{} trained".format(count))
                 # print("{}".format(self.output_matrix[0]))
 
-            layer1 = data.dot(self.hidden1_matrix)
-            sig1 = scipy.special.expit(layer1)
-            out_raw = sig1.dot(self.output_matrix)
+            layer1 = data.dot(self.hidden1_matrix) + self.hidden1_bias
+            activated1 = self.relu(layer1)
+
+            out_raw = activated1.dot(self.output_matrix) + self.output_bias
             out_prob = scipy.special.softmax(out_raw)
             out_index = numpy.argmax(out_prob)
             out_result = self.output_classes[out_index]
-            if 0 in out_prob:
-                print("0 in out result")
 
             if out_result == label:
                 correct += 1
@@ -97,22 +104,27 @@ class HandwritingDigitAnalysis:
 
             error = out_prob - target
             output_loss = self.log_loss(out_prob, target)
-            output_adjust = output_loss * self.d_softmax(out_raw)
-            output_matrix_delta = numpy.matmul(sig1.reshape(-1, 1), output_adjust.reshape(1, -1))
-            if math.isnan(output_matrix_delta[0][0]):
-                print("Problem with output adjust")
+
+            cost = error / self.batch_size
+            cumulative_output_bias_change += cost
+            output_matrix_delta = numpy.matmul(activated1.T, cost)
             cumulative_output_data_change += output_matrix_delta
 
-            layer1_adjust = (self.output_matrix.dot(error.reshape(-1, 1))).T * self.d_sigmoid(sig1)
-            hidden1_matrix_delta = numpy.matmul(data.reshape(-1, 1), layer1_adjust.reshape(1, -1))
-            if math.isnan(hidden1_matrix_delta[0][0]):
-                print("Problem with layer1 adjust")
-            cumulative_layer1_data_change += hidden1_matrix_delta
+            layer1_bias_delta = numpy.matmul(cost, self.output_matrix.T) * self.d_relu(layer1)
+            cumulative_layer1_bias_change += layer1_bias_delta
+            layer1_matrix_delta = numpy.matmul(layer1_bias_delta.T, data).T
+            cumulative_layer1_data_change += layer1_matrix_delta
 
         return correct / len(training_set)
 
     def d_sigmoid(self, post_sigmoid_input):
         return post_sigmoid_input * (1 - post_sigmoid_input)
+
+    def relu(self, input):
+        return numpy.maximum(0, input)
+
+    def d_relu(self, input):
+        return numpy.where(input > 0, 1, 0)
 
     def d_softmax(self, pre_softmax_input):
         exp = numpy.exp(pre_softmax_input - pre_softmax_input.max())
@@ -128,12 +140,15 @@ class HandwritingDigitAnalysis:
         error = expected_result - my_result
         loss = error * self.d_sigmoid()
 
-    def update_model(self, hidden1_update, output_update):
+    def update_model(self, hidden1_update, hidden1_bias_update, output_update, output_bias_update):
 
         adjustment_weight = ((self.epochs - self.current_epoch) / self.epochs) * self.error_adj_weight
 
         self.hidden1_matrix = self.hidden1_matrix - adjustment_weight * hidden1_update
         self.output_matrix = self.output_matrix - adjustment_weight * output_update
+
+        self.hidden1_bias = self.hidden1_bias - (adjustment_weight * hidden1_bias_update)
+        self.output_bias = self.output_bias - (adjustment_weight * output_bias_update)
 
     def test(self, testing_set):
         print("testing")
