@@ -3,7 +3,6 @@ import random
 import sys
 import time
 from enum import Enum
-from idlelib import testing
 
 import numpy
 import scipy.special
@@ -11,13 +10,17 @@ import scipy.special
 
 def load_files():
     print("Loading Files...")
+    training_images = []
     training_images = load_file(sys.argv[1])
     training_images = preprocess_images(training_images)
     training_labels = load_file(sys.argv[2])
     testing_images = load_file(sys.argv[3])
     testing_images = preprocess_images(testing_images)
+    testing_labels = []
+    if len(sys.argv) == 5:
+        testing_labels = load_file(sys.argv[4])
     print("Zipping Files...")
-    return training_images, training_labels, testing_images
+    return training_images, training_labels, testing_images, testing_labels
 
 
 def load_file(filename):
@@ -26,16 +29,25 @@ def load_file(filename):
         return numpy.genfromtxt(filename, dtype=int, delimiter=',')
 
 
+def write_file(filename, content):
+    print("Writing {}".format(filename))
+    with open(filename, 'w') as file:
+        for value in content:
+            file.write("{}\n".format(value))
+
+
 def preprocess_images(images):
     return images / numpy.amax(images)
+
 
 class ActivationFunction(Enum):
     sigmoid = "sigmoid"
     relu = "relu"
 
+
 class HandwritingDigitAnalysis:
-    epochs = 40
-    batch_size = 100
+    epochs = 90
+    batch_size = 50
     current_epoch = 0
 
     input_to_h1_reduction_ratio = 0.5
@@ -170,14 +182,45 @@ class HandwritingDigitAnalysis:
         self.hidden1_bias = self.hidden1_bias - (adjustment_weight * hidden1_bias_update)
         self.output_bias = self.output_bias - (adjustment_weight * output_bias_update)
 
-    def test(self, testing_set):
-        print("testing")
-        return self.output_size
+    def test(self, testing_set, amount):
+        testing_results = []
+        for data in testing_set:
+            data = data.reshape(1, -1)
+            layer1 = data.dot(self.hidden1_matrix)
+            layer1 += self.hidden1_bias
+            activated1 = self.activation(layer1)
+
+            out_raw = activated1.dot(self.output_matrix)
+            out_raw += self.output_bias
+            out_prob = scipy.special.softmax(out_raw)
+            out_index = numpy.argmax(out_prob)
+            testing_results.append(self.output_classes[out_index])
+        return testing_results
+
+    def analyze(self, testing_set):
+        testing_results = []
+        for data in testing_set:
+            data = data.reshape(1, -1)
+            layer1 = data.dot(self.hidden1_matrix)
+            layer1 += self.hidden1_bias
+            activated1 = self.activation(layer1)
+
+            out_raw = activated1.dot(self.output_matrix)
+            out_raw += self.output_bias
+            out_prob = scipy.special.softmax(out_raw)
+            out_index = numpy.argmax(out_prob)
+            testing_results.append(self.output_classes[out_index])
+        return testing_results
 
 
 def main():
-    training_images, training_labels, testing_images = load_files()
+    start_time = time.time()
+    print("Starting Program: {}".format(start_time))
+    training_images, training_labels, testing_images, testing_labels = load_files()
     hda = HandwritingDigitAnalysis(training_labels, training_images, 10)
+    results = hda.analyze(testing_images)
+    write_file("test_predictions.csv", results)
+    print("Finished Program: {}".format(time.time() - start_time))
 
 
 if __name__ == "__main__":
